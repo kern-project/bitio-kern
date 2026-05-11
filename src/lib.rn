@@ -1,0 +1,163 @@
+//! Bit-level protocol and codec utilities for Kern.
+//!
+//! `bitio-kern` is organized around borrowed cursor handles. Readers borrow an
+//! input byte slice, writers borrow an output byte slice, and cursor methods
+//! advance explicitly while reporting structured failures.
+//!
+//! The first implementation will support MSB-first and LSB-first cursors,
+//! endian helpers, and protocol-friendly masking utilities without allocating.
+
+/// Cursor and buffer errors reported by bit-level operations.
+pub enum Error {
+    /// The reader reached the end of the input before the requested bits were available.
+    UnexpectedEof,
+    /// The writer reached the end of the output buffer.
+    ShortOutput,
+    /// The requested bit count is not valid for the target integer width.
+    InvalidBitCount,
+    /// The value cannot be represented in the requested bit count.
+    ValueTooWide,
+};
+
+/// Borrowed MSB-first bit reader.
+pub struct MsbReader {
+    data: &[u8],
+    byte_index: usize = 0,
+    bit_index: u8 = 0,
+};
+
+/// Borrowed MSB-first bit writer.
+pub struct MsbWriter {
+    data: &mut [u8],
+    byte_index: usize = 0,
+    bit_index: u8 = 0,
+};
+
+impl &[u8] {
+    /// Creates an MSB-first bit reader over this byte slice.
+    pub fn bits_msb() MsbReader {
+        return .{ data: self };
+    }
+}
+
+impl &mut [u8] {
+    /// Creates an MSB-first bit writer over this mutable byte slice.
+    pub fn bits_msb_mut() MsbWriter {
+        return .{ data: self };
+    }
+}
+
+impl &MsbReader {
+    /// Returns the current byte offset.
+    pub fn byte_offset() usize {
+        return self.byte_index;
+    }
+
+    /// Returns the bit offset within the current byte.
+    pub fn bit_offset() u8 {
+        return self.bit_index;
+    }
+}
+
+impl &mut MsbReader {
+    /// Reads one boolean bit.
+    pub fn read_bool() bool!Error {
+        if (self.byte_index >= #self.data) {
+            return .{ Err: .UnexpectedEof };
+        }
+        let byte = self.data.[self.byte_index];
+        let shift = 7 - self.bit_index;
+        let value = ((byte >> shift) & 1) != 0;
+        self.bit_index += 1;
+        if (self.bit_index == 8) {
+            self.bit_index = 0;
+            self.byte_index += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to eight bits as a `u8`.
+    pub fn read_u8(width: u8) u8!Error {
+        if (width > 8) {
+            return .{ Err: .InvalidBitCount };
+        }
+        let mut value = u8.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            let bit = self.read_bool().!;
+            value = value << 1;
+            if (bit) {
+                value = value | 1;
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Advances to the next byte boundary.
+    pub fn align_to_byte() void {
+        if (self.bit_index == 0) {
+            return;
+        }
+        self.bit_index = 0;
+        self.byte_index += 1;
+    }
+}
+
+impl &MsbWriter {
+    /// Returns the current byte offset.
+    pub fn byte_offset() usize {
+        return self.byte_index;
+    }
+
+    /// Returns the bit offset within the current byte.
+    pub fn bit_offset() u8 {
+        return self.bit_index;
+    }
+}
+
+impl &mut MsbWriter {
+    /// Writes one boolean bit.
+    pub fn write_bool(value: bool) void!Error {
+        if (self.byte_index >= #self.data) {
+            return .{ Err: .ShortOutput };
+        }
+        let shift = 7 - self.bit_index;
+        let mask = u8.{1} << shift;
+        if (value) {
+            self.data.[self.byte_index] = self.data.[self.byte_index] | mask;
+        } else {
+            self.data.[self.byte_index] = self.data.[self.byte_index] & ~mask;
+        }
+        self.bit_index += 1;
+        if (self.bit_index == 8) {
+            self.bit_index = 0;
+            self.byte_index += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in MSB-first order.
+    pub fn write_u8(width: u8, value: u8) void!Error {
+        if (width > 8) {
+            return .{ Err: .InvalidBitCount };
+        }
+        if (width < 8 and (value >> width) != 0) {
+            return .{ Err: .ValueTooWide };
+        }
+        let mut i = width;
+        while (i > 0) {
+            i -= 1;
+            self.write_bool(((value >> i) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Pads with zero bits until the next byte boundary.
+    pub fn pad_to_byte() void!Error {
+        while (self.bit_index != 0) {
+            self.write_bool(false).!;
+        }
+        return .{ Ok: {} };
+    }
+}

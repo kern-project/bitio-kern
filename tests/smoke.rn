@@ -1,0 +1,48 @@
+//! Smoke tests for the initial MSB bit cursor.
+
+use base.test;
+use bitio;
+use std.io;
+
+fn check_read_bits() void {
+    let t = test.report(io.stderr())..&;
+    let data = [1]u8.{0b1010_0000};
+    let r = data.&[0 .. 1].bits_msb()..&;
+
+    r.read_bool()
+        .should_ok()
+        .sum(@loc(), t)
+        .should()
+        .sum(@loc(), t);
+    r.read_u8(3)
+        .should_ok()
+        .sum(@loc(), t)
+        .should()
+        .eq(u8.{2})
+        .sum(@loc(), t);
+}
+
+fn check_write_bits() void {
+    let t = test.report(io.stderr())..&;
+    let mut out = [1]u8.{0};
+    let w = out..&[0 .. 1].bits_msb_mut()..&;
+
+    w
+        .write_bool(true)
+        .should_ok()
+        .sum(@loc(), t);
+    w
+        .write_u8(3, 2)
+        .should_ok()
+        .sum(@loc(), t);
+    out.[0]
+        .should()
+        .eq(u8.{0b1010_0000})
+        .sum(@loc(), t);
+}
+
+fn main() i32 {
+    check_read_bits();
+    check_write_bits();
+    return 0;
+}

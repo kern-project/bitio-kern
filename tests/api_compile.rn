@@ -1,0 +1,16 @@
+//! Compile-time coverage for README-shaped bitio flows.
+
+use bitio;
+
+fn read_flags(packet: &[u8]) bool!bitio.Error {
+    let r = packet.bits_msb()..&;
+    let enabled = r.read_bool().!;
+    _ = r.read_u8(3).!;
+    return .{ Ok: enabled };
+}
+
+fn main() i32 {
+    let packet = [1]u8.{0b1010_0000};
+    let .{ Ok: enabled } = read_flags(packet.&[0 .. 1]) else return 1;
+    return if (enabled) 0 else 1;
+}
