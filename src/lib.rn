@@ -2,10 +2,24 @@
 //!
 //! `bitio-kern` is organized around borrowed cursor handles. Readers borrow an
 //! input byte slice, writers borrow an output byte slice, and cursor methods
-//! advance explicitly while reporting structured failures.
+//! advance explicitly while reporting structured failures. The package does not
+//! allocate for ordinary cursor, endian, or masking operations.
 //!
-//! The first implementation will support MSB-first and LSB-first cursors,
-//! endian helpers, and protocol-friendly masking utilities without allocating.
+//! Bit order is part of the type:
+//!
+//! - `MsbReader` and `MsbWriter` consume or emit the most significant bit of
+//!   each byte first.
+//! - `LsbReader` and `LsbWriter` consume or emit the least significant bit of
+//!   each byte first.
+//!
+//! Multi-bit reads return the integer in the natural order for that cursor. An
+//! MSB-first read shifts each incoming bit into the low end of the result after
+//! moving previous bits left. An LSB-first read stores the first incoming bit at
+//! bit zero, the next at bit one, and so on.
+
+use base.io.{Formatable, Write};
+
+const USIZE_BITS = @sizeOf[usize]() * 8;
 
 /// Cursor and buffer errors reported by bit-level operations.
 pub enum Error {
@@ -19,31 +33,289 @@ pub enum Error {
     ValueTooWide,
 };
 
+impl &Error : Formatable {
+    /// Writes a stable diagnostic name for the bit I/O error.
+    pub fn write_to(writer: &mut Write) void {
+        match (self.*) {
+            .UnexpectedEof => _ = writer.write("bitio.Error.UnexpectedEof"),
+            .ShortOutput => _ = writer.write("bitio.Error.ShortOutput"),
+            .InvalidBitCount => _ = writer.write("bitio.Error.InvalidBitCount"),
+            .ValueTooWide => _ = writer.write("bitio.Error.ValueTooWide"),
+        }
+    }
+}
+
 /// Borrowed MSB-first bit reader.
+///
+/// The reader never owns or copies the input. Methods advance `byte_offset`
+/// and `bit_offset` as bits are consumed.
 pub struct MsbReader {
     data: &[u8],
     byte_index: usize = 0,
     bit_index: u8 = 0,
 };
 
+/// Borrowed LSB-first bit reader.
+///
+/// The first bit read from each byte is bit zero, then bit one, through bit
+/// seven. Multi-bit reads place the first consumed bit at bit zero of the
+/// returned integer.
+pub struct LsbReader {
+    data: &[u8],
+    byte_index: usize = 0,
+    bit_index: u8 = 0,
+};
+
 /// Borrowed MSB-first bit writer.
+///
+/// The writer mutates caller-owned output in place. Bits not written are left
+/// unchanged unless `write_bool(false)` or `pad_to_byte()` clears them.
 pub struct MsbWriter {
     data: &mut [u8],
     byte_index: usize = 0,
     bit_index: u8 = 0,
 };
 
+/// Borrowed LSB-first bit writer.
+///
+/// The first bit written into each byte targets bit zero, then bit one, through
+/// bit seven. Multi-bit writes emit bit zero of the value first.
+pub struct LsbWriter {
+    data: &mut [u8],
+    byte_index: usize = 0,
+    bit_index: u8 = 0,
+};
+
+/// Creates an MSB-first bit reader over a borrowed byte slice.
+pub fn msb_reader(data: &[u8]) MsbReader {
+    return .{ data: data };
+}
+
+/// Creates an LSB-first bit reader over a borrowed byte slice.
+pub fn lsb_reader(data: &[u8]) LsbReader {
+    return .{ data: data };
+}
+
+/// Creates an MSB-first bit writer over a mutable borrowed byte slice.
+pub fn msb_writer(data: &mut [u8]) MsbWriter {
+    return .{ data: data };
+}
+
+/// Creates an LSB-first bit writer over a mutable borrowed byte slice.
+pub fn lsb_writer(data: &mut [u8]) LsbWriter {
+    return .{ data: data };
+}
+
+fn invalid_width(width: u8, max: u8) bool {
+    return width > max;
+}
+
+// Masks keep the value-fit check exact before writers mutate the output slice.
+fn mask_u8(width: u8) u8 {
+    if (width == 0) return 0;
+    if (width >= 8) return ~u8.{0};
+    return (u8.{1} << width) - 1;
+}
+
+fn mask_u16(width: u8) u16 {
+    if (width == 0) return 0;
+    if (width >= 16) return ~u16.{0};
+    return (u16.{1} << (width as u16)) - 1;
+}
+
+fn mask_u32(width: u8) u32 {
+    if (width == 0) return 0;
+    if (width >= 32) return ~u32.{0};
+    return (u32.{1} << (width as u32)) - 1;
+}
+
+fn mask_u64(width: u8) u64 {
+    if (width == 0) return 0;
+    if (width >= 64) return ~u64.{0};
+    return (u64.{1} << (width as u64)) - 1;
+}
+
+fn mask_usize(width: u8) usize {
+    if (width == 0) return 0;
+    if ((width as usize) >= USIZE_BITS) return ~usize.{0};
+    return (usize.{1} << (width as usize)) - 1;
+}
+
 impl &[u8] {
     /// Creates an MSB-first bit reader over this byte slice.
     pub fn bits_msb() MsbReader {
-        return .{ data: self };
+        return msb_reader(self);
+    }
+
+    /// Creates an LSB-first bit reader over this byte slice.
+    pub fn bits_lsb() LsbReader {
+        return lsb_reader(self);
+    }
+
+    /// Reads a big-endian `u16` from the first two bytes.
+    pub fn read_u16_be() u16!Error {
+        if (#self < 2) return .{ Err: .UnexpectedEof };
+        return .{ Ok: ((self.[0] as u16) << 8) | (self.[1] as u16) };
+    }
+
+    /// Reads a little-endian `u16` from the first two bytes.
+    pub fn read_u16_le() u16!Error {
+        if (#self < 2) return .{ Err: .UnexpectedEof };
+        return .{ Ok: (self.[0] as u16) | ((self.[1] as u16) << 8) };
+    }
+
+    /// Reads a big-endian `u32` from the first four bytes.
+    pub fn read_u32_be() u32!Error {
+        if (#self < 4) return .{ Err: .UnexpectedEof };
+        return .{ Ok:
+            ((self.[0] as u32) << 24) |
+            ((self.[1] as u32) << 16) |
+            ((self.[2] as u32) << 8) |
+            (self.[3] as u32)
+        };
+    }
+
+    /// Reads a little-endian `u32` from the first four bytes.
+    pub fn read_u32_le() u32!Error {
+        if (#self < 4) return .{ Err: .UnexpectedEof };
+        return .{ Ok:
+            (self.[0] as u32) |
+            ((self.[1] as u32) << 8) |
+            ((self.[2] as u32) << 16) |
+            ((self.[3] as u32) << 24)
+        };
+    }
+
+    /// Reads a big-endian `u64` from the first eight bytes.
+    pub fn read_u64_be() u64!Error {
+        if (#self < 8) return .{ Err: .UnexpectedEof };
+        return .{ Ok:
+            ((self.[0] as u64) << 56) |
+            ((self.[1] as u64) << 48) |
+            ((self.[2] as u64) << 40) |
+            ((self.[3] as u64) << 32) |
+            ((self.[4] as u64) << 24) |
+            ((self.[5] as u64) << 16) |
+            ((self.[6] as u64) << 8) |
+            (self.[7] as u64)
+        };
+    }
+
+    /// Reads a little-endian `u64` from the first eight bytes.
+    pub fn read_u64_le() u64!Error {
+        if (#self < 8) return .{ Err: .UnexpectedEof };
+        return .{ Ok:
+            (self.[0] as u64) |
+            ((self.[1] as u64) << 8) |
+            ((self.[2] as u64) << 16) |
+            ((self.[3] as u64) << 24) |
+            ((self.[4] as u64) << 32) |
+            ((self.[5] as u64) << 40) |
+            ((self.[6] as u64) << 48) |
+            ((self.[7] as u64) << 56)
+        };
     }
 }
 
 impl &mut [u8] {
     /// Creates an MSB-first bit writer over this mutable byte slice.
     pub fn bits_msb_mut() MsbWriter {
-        return .{ data: self };
+        return msb_writer(self);
+    }
+
+    /// Creates an LSB-first bit writer over this mutable byte slice.
+    pub fn bits_lsb_mut() LsbWriter {
+        return lsb_writer(self);
+    }
+
+    /// Writes a big-endian `u16` into the first two bytes.
+    pub fn write_u16_be(value: u16) void!Error {
+        if (#self < 2) return .{ Err: .ShortOutput };
+        self.[0] = (value >> 8) as u8;
+        self.[1] = value as u8;
+        return .{ Ok: {} };
+    }
+
+    /// Writes a little-endian `u16` into the first two bytes.
+    pub fn write_u16_le(value: u16) void!Error {
+        if (#self < 2) return .{ Err: .ShortOutput };
+        self.[0] = value as u8;
+        self.[1] = (value >> 8) as u8;
+        return .{ Ok: {} };
+    }
+
+    /// Writes a big-endian `u32` into the first four bytes.
+    pub fn write_u32_be(value: u32) void!Error {
+        if (#self < 4) return .{ Err: .ShortOutput };
+        self.[0] = (value >> 24) as u8;
+        self.[1] = (value >> 16) as u8;
+        self.[2] = (value >> 8) as u8;
+        self.[3] = value as u8;
+        return .{ Ok: {} };
+    }
+
+    /// Writes a little-endian `u32` into the first four bytes.
+    pub fn write_u32_le(value: u32) void!Error {
+        if (#self < 4) return .{ Err: .ShortOutput };
+        self.[0] = value as u8;
+        self.[1] = (value >> 8) as u8;
+        self.[2] = (value >> 16) as u8;
+        self.[3] = (value >> 24) as u8;
+        return .{ Ok: {} };
+    }
+
+    /// Writes a big-endian `u64` into the first eight bytes.
+    pub fn write_u64_be(value: u64) void!Error {
+        if (#self < 8) return .{ Err: .ShortOutput };
+        self.[0] = (value >> 56) as u8;
+        self.[1] = (value >> 48) as u8;
+        self.[2] = (value >> 40) as u8;
+        self.[3] = (value >> 32) as u8;
+        self.[4] = (value >> 24) as u8;
+        self.[5] = (value >> 16) as u8;
+        self.[6] = (value >> 8) as u8;
+        self.[7] = value as u8;
+        return .{ Ok: {} };
+    }
+
+    /// Writes a little-endian `u64` into the first eight bytes.
+    pub fn write_u64_le(value: u64) void!Error {
+        if (#self < 8) return .{ Err: .ShortOutput };
+        self.[0] = value as u8;
+        self.[1] = (value >> 8) as u8;
+        self.[2] = (value >> 16) as u8;
+        self.[3] = (value >> 24) as u8;
+        self.[4] = (value >> 32) as u8;
+        self.[5] = (value >> 40) as u8;
+        self.[6] = (value >> 48) as u8;
+        self.[7] = (value >> 56) as u8;
+        return .{ Ok: {} };
+    }
+
+    /// XORs every byte in the slice with one mask byte.
+    pub fn xor_mask(mask: u8) void {
+        let mut i = usize.{0};
+        // In-place mutation needs stable numeric indexes; there is no iterator
+        // borrow to advance without holding a conflicting mutable slice borrow.
+        while (i < #self) {
+            self.[i] = self.[i] ^ mask;
+            i += 1;
+        }
+    }
+
+    /// XORs the slice with a repeating mask.
+    ///
+    /// An empty mask is rejected because it almost always means the caller lost
+    /// a protocol key or nonce boundary.
+    pub fn xor_repeating(mask: &[u8]) void!Error {
+        if (#mask == 0) return .{ Err: .InvalidBitCount };
+        let mut i = usize.{0};
+        // The index is also the repeating-mask phase, so keep the counter visible.
+        while (i < #self) {
+            self.[i] = self.[i] ^ mask.[i % #mask];
+            i += 1;
+        }
+        return .{ Ok: {} };
     }
 }
 
@@ -57,14 +329,22 @@ impl &MsbReader {
     pub fn bit_offset() u8 {
         return self.bit_index;
     }
+
+    /// Returns the total number of consumed bits.
+    pub fn bit_position() usize {
+        return self.byte_index * 8 + (self.bit_index as usize);
+    }
+
+    /// Returns true when the cursor is exactly at a byte boundary.
+    pub fn is_byte_aligned() bool {
+        return self.bit_index == 0;
+    }
 }
 
 impl &mut MsbReader {
     /// Reads one boolean bit.
     pub fn read_bool() bool!Error {
-        if (self.byte_index >= #self.data) {
-            return .{ Err: .UnexpectedEof };
-        }
+        if (self.byte_index >= #self.data) return .{ Err: .UnexpectedEof };
         let byte = self.data.[self.byte_index];
         let shift = 7 - self.bit_index;
         let value = ((byte >> shift) & 1) != 0;
@@ -78,15 +358,12 @@ impl &mut MsbReader {
 
     /// Reads up to eight bits as a `u8`.
     pub fn read_u8(width: u8) u8!Error {
-        if (width > 8) {
-            return .{ Err: .InvalidBitCount };
-        }
+        if (invalid_width(width, 8)) return .{ Err: .InvalidBitCount };
         let mut value = u8.{0};
         let mut i = u8.{0};
         while (i < width) {
-            let bit = self.read_bool().!;
             value = value << 1;
-            if (bit) {
+            if (self.read_bool().!) {
                 value = value | 1;
             }
             i += 1;
@@ -94,11 +371,183 @@ impl &mut MsbReader {
         return .{ Ok: value };
     }
 
-    /// Advances to the next byte boundary.
-    pub fn align_to_byte() void {
-        if (self.bit_index == 0) {
-            return;
+    /// Reads up to sixteen bits as a `u16`.
+    pub fn read_u16(width: u8) u16!Error {
+        if (invalid_width(width, 16)) return .{ Err: .InvalidBitCount };
+        let mut value = u16.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            value = value << 1;
+            if (self.read_bool().!) {
+                value = value | 1;
+            }
+            i += 1;
         }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to thirty-two bits as a `u32`.
+    pub fn read_u32(width: u8) u32!Error {
+        if (invalid_width(width, 32)) return .{ Err: .InvalidBitCount };
+        let mut value = u32.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            value = value << 1;
+            if (self.read_bool().!) {
+                value = value | 1;
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to sixty-four bits as a `u64`.
+    pub fn read_u64(width: u8) u64!Error {
+        if (invalid_width(width, 64)) return .{ Err: .InvalidBitCount };
+        let mut value = u64.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            value = value << 1;
+            if (self.read_bool().!) {
+                value = value | 1;
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to the native pointer width as a `usize`.
+    pub fn read_usize(width: u8) usize!Error {
+        if ((width as usize) > USIZE_BITS) return .{ Err: .InvalidBitCount };
+        let mut value = usize.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            value = value << 1;
+            if (self.read_bool().!) {
+                value = value | 1;
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Advances to the next byte boundary without reading the skipped bits.
+    pub fn align_to_byte() void {
+        if (self.bit_index == 0) return;
+        self.bit_index = 0;
+        self.byte_index += 1;
+    }
+}
+
+impl &LsbReader {
+    /// Returns the current byte offset.
+    pub fn byte_offset() usize {
+        return self.byte_index;
+    }
+
+    /// Returns the bit offset within the current byte.
+    pub fn bit_offset() u8 {
+        return self.bit_index;
+    }
+
+    /// Returns the total number of consumed bits.
+    pub fn bit_position() usize {
+        return self.byte_index * 8 + (self.bit_index as usize);
+    }
+
+    /// Returns true when the cursor is exactly at a byte boundary.
+    pub fn is_byte_aligned() bool {
+        return self.bit_index == 0;
+    }
+}
+
+impl &mut LsbReader {
+    /// Reads one boolean bit.
+    pub fn read_bool() bool!Error {
+        if (self.byte_index >= #self.data) return .{ Err: .UnexpectedEof };
+        let byte = self.data.[self.byte_index];
+        let value = ((byte >> self.bit_index) & 1) != 0;
+        self.bit_index += 1;
+        if (self.bit_index == 8) {
+            self.bit_index = 0;
+            self.byte_index += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to eight bits as a `u8`.
+    pub fn read_u8(width: u8) u8!Error {
+        if (invalid_width(width, 8)) return .{ Err: .InvalidBitCount };
+        let mut value = u8.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            if (self.read_bool().!) {
+                value = value | (u8.{1} << i);
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to sixteen bits as a `u16`.
+    pub fn read_u16(width: u8) u16!Error {
+        if (invalid_width(width, 16)) return .{ Err: .InvalidBitCount };
+        let mut value = u16.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            if (self.read_bool().!) {
+                value = value | (u16.{1} << (i as u16));
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to thirty-two bits as a `u32`.
+    pub fn read_u32(width: u8) u32!Error {
+        if (invalid_width(width, 32)) return .{ Err: .InvalidBitCount };
+        let mut value = u32.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            if (self.read_bool().!) {
+                value = value | (u32.{1} << (i as u32));
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to sixty-four bits as a `u64`.
+    pub fn read_u64(width: u8) u64!Error {
+        if (invalid_width(width, 64)) return .{ Err: .InvalidBitCount };
+        let mut value = u64.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            if (self.read_bool().!) {
+                value = value | (u64.{1} << (i as u64));
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Reads up to the native pointer width as a `usize`.
+    pub fn read_usize(width: u8) usize!Error {
+        if ((width as usize) > USIZE_BITS) return .{ Err: .InvalidBitCount };
+        let mut value = usize.{0};
+        let mut i = u8.{0};
+        while (i < width) {
+            if (self.read_bool().!) {
+                value = value | (usize.{1} << (i as usize));
+            }
+            i += 1;
+        }
+        return .{ Ok: value };
+    }
+
+    /// Advances to the next byte boundary without reading the skipped bits.
+    pub fn align_to_byte() void {
+        if (self.bit_index == 0) return;
         self.bit_index = 0;
         self.byte_index += 1;
     }
@@ -114,14 +563,22 @@ impl &MsbWriter {
     pub fn bit_offset() u8 {
         return self.bit_index;
     }
+
+    /// Returns the total number of written bits.
+    pub fn bit_position() usize {
+        return self.byte_index * 8 + (self.bit_index as usize);
+    }
+
+    /// Returns true when the cursor is exactly at a byte boundary.
+    pub fn is_byte_aligned() bool {
+        return self.bit_index == 0;
+    }
 }
 
 impl &mut MsbWriter {
     /// Writes one boolean bit.
     pub fn write_bool(value: bool) void!Error {
-        if (self.byte_index >= #self.data) {
-            return .{ Err: .ShortOutput };
-        }
+        if (self.byte_index >= #self.data) return .{ Err: .ShortOutput };
         let shift = 7 - self.bit_index;
         let mask = u8.{1} << shift;
         if (value) {
@@ -139,16 +596,169 @@ impl &mut MsbWriter {
 
     /// Writes the low `width` bits of `value` in MSB-first order.
     pub fn write_u8(width: u8, value: u8) void!Error {
-        if (width > 8) {
-            return .{ Err: .InvalidBitCount };
-        }
-        if (width < 8 and (value >> width) != 0) {
-            return .{ Err: .ValueTooWide };
-        }
+        if (invalid_width(width, 8)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u8(width)) != 0) return .{ Err: .ValueTooWide };
         let mut i = width;
         while (i > 0) {
             i -= 1;
             self.write_bool(((value >> i) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in MSB-first order.
+    pub fn write_u16(width: u8, value: u16) void!Error {
+        if (invalid_width(width, 16)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u16(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = width;
+        while (i > 0) {
+            i -= 1;
+            self.write_bool(((value >> (i as u16)) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in MSB-first order.
+    pub fn write_u32(width: u8, value: u32) void!Error {
+        if (invalid_width(width, 32)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u32(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = width;
+        while (i > 0) {
+            i -= 1;
+            self.write_bool(((value >> (i as u32)) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in MSB-first order.
+    pub fn write_u64(width: u8, value: u64) void!Error {
+        if (invalid_width(width, 64)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u64(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = width;
+        while (i > 0) {
+            i -= 1;
+            self.write_bool(((value >> (i as u64)) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in MSB-first order.
+    pub fn write_usize(width: u8, value: usize) void!Error {
+        if ((width as usize) > USIZE_BITS) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_usize(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = width;
+        while (i > 0) {
+            i -= 1;
+            self.write_bool(((value >> (i as usize)) & 1) != 0).!;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Pads with zero bits until the next byte boundary.
+    pub fn pad_to_byte() void!Error {
+        while (self.bit_index != 0) {
+            self.write_bool(false).!;
+        }
+        return .{ Ok: {} };
+    }
+}
+
+impl &LsbWriter {
+    /// Returns the current byte offset.
+    pub fn byte_offset() usize {
+        return self.byte_index;
+    }
+
+    /// Returns the bit offset within the current byte.
+    pub fn bit_offset() u8 {
+        return self.bit_index;
+    }
+
+    /// Returns the total number of written bits.
+    pub fn bit_position() usize {
+        return self.byte_index * 8 + (self.bit_index as usize);
+    }
+
+    /// Returns true when the cursor is exactly at a byte boundary.
+    pub fn is_byte_aligned() bool {
+        return self.bit_index == 0;
+    }
+}
+
+impl &mut LsbWriter {
+    /// Writes one boolean bit.
+    pub fn write_bool(value: bool) void!Error {
+        if (self.byte_index >= #self.data) return .{ Err: .ShortOutput };
+        let mask = u8.{1} << self.bit_index;
+        if (value) {
+            self.data.[self.byte_index] = self.data.[self.byte_index] | mask;
+        } else {
+            self.data.[self.byte_index] = self.data.[self.byte_index] & ~mask;
+        }
+        self.bit_index += 1;
+        if (self.bit_index == 8) {
+            self.bit_index = 0;
+            self.byte_index += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in LSB-first order.
+    pub fn write_u8(width: u8, value: u8) void!Error {
+        if (invalid_width(width, 8)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u8(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = u8.{0};
+        while (i < width) {
+            self.write_bool(((value >> i) & 1) != 0).!;
+            i += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in LSB-first order.
+    pub fn write_u16(width: u8, value: u16) void!Error {
+        if (invalid_width(width, 16)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u16(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = u8.{0};
+        while (i < width) {
+            self.write_bool(((value >> (i as u16)) & 1) != 0).!;
+            i += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in LSB-first order.
+    pub fn write_u32(width: u8, value: u32) void!Error {
+        if (invalid_width(width, 32)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u32(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = u8.{0};
+        while (i < width) {
+            self.write_bool(((value >> (i as u32)) & 1) != 0).!;
+            i += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in LSB-first order.
+    pub fn write_u64(width: u8, value: u64) void!Error {
+        if (invalid_width(width, 64)) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_u64(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = u8.{0};
+        while (i < width) {
+            self.write_bool(((value >> (i as u64)) & 1) != 0).!;
+            i += 1;
+        }
+        return .{ Ok: {} };
+    }
+
+    /// Writes the low `width` bits of `value` in LSB-first order.
+    pub fn write_usize(width: u8, value: usize) void!Error {
+        if ((width as usize) > USIZE_BITS) return .{ Err: .InvalidBitCount };
+        if ((value & ~mask_usize(width)) != 0) return .{ Err: .ValueTooWide };
+        let mut i = u8.{0};
+        while (i < width) {
+            self.write_bool(((value >> (i as usize)) & 1) != 0).!;
+            i += 1;
         }
         return .{ Ok: {} };
     }

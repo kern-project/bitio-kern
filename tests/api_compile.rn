@@ -2,15 +2,31 @@
 
 use bitio;
 
-fn read_flags(packet: &[u8]) bool!bitio.Error {
+fn parse_header(packet: &[u8]) u16!bitio.Error {
     let r = packet.bits_msb()..&;
     let enabled = r.read_bool().!;
-    _ = r.read_u8(3).!;
-    return .{ Ok: enabled };
+    let version = r.read_u8(3).!;
+    r.align_to_byte();
+    let length = packet.&[1 .. #packet].read_u16_be().!;
+
+    if (!enabled or version == 0) {
+        return .{ Err: .ValueTooWide };
+    }
+    return .{ Ok: length };
+}
+
+fn write_header(out: &mut [u8], length: u16) void!bitio.Error {
+    let w = out.bits_msb_mut()..&;
+    w.write_bool(true).!;
+    w.write_u8(3, 2).!;
+    w.pad_to_byte().!;
+    out..&[1 .. #out].write_u16_be(length).!;
+    return .{ Ok: {} };
 }
 
 fn main() i32 {
-    let packet = [1]u8.{0b1010_0000};
-    let .{ Ok: enabled } = read_flags(packet.&[0 .. 1]) else return 1;
-    return if (enabled) 0 else 1;
+    let mut packet = [3]u8.{0, 0, 0};
+    let .{ Ok: _ } = write_header(packet..&[0 .. 3], 0x1234) else return 1;
+    let .{ Ok: length } = parse_header(packet.&[0 .. 3]) else return 1;
+    return if (length == 0x1234) 0 else 1;
 }
