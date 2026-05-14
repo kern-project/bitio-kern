@@ -7,7 +7,7 @@ handles.
 
 ## Priority 0: Package Shape
 
-- Create a standalone Craft package named `bitio` with `src/lib.rn`, focused
+- Create a standalone Craft package named `bitio` with `src/lib.kn`, focused
   tests, README, MIT license, and no dependency on the old incubator source.
 - Keep the public API allocation-free by default. Bit readers and writers should
   borrow caller-owned byte slices and report cursor/buffer errors explicitly.

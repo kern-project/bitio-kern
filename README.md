@@ -32,20 +32,20 @@ struct Header {
 
 fn parse_header(packet: &[u8]) Header!bitio.Error {
     let r = packet.bits_msb()..&;
-    let encrypted = r.read_bool().!;
-    let version = r.read_u8(3).!;
+    let encrypted = r.read_bool().?;
+    let version = r.read_u8(3).?;
     r.align_to_byte();
 
-    let length = packet.&[1 .. #packet].read_u16_be().!;
+    let length = packet.&[1...packet.len()].read_u16_be().?;
     return .{ Ok: .{ encrypted: encrypted, version: version, length: length } };
 }
 
 fn write_header(out: &mut [u8], header: Header) void!bitio.Error {
     let w = out.bits_msb_mut()..&;
-    w.write_bool(header.encrypted).!;
-    w.write_u8(3, header.version).!;
-    w.pad_to_byte().!;
-    out..&[1 .. #out].write_u16_be(header.length).!;
+    w.write_bool(header.encrypted).?;
+    w.write_u8(3, header.version).?;
+    w.pad_to_byte().?;
+    out..&[1...out.len()].write_u16_be(header.length).?;
     return .{ Ok: {} };
 }
 ```

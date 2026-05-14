@@ -1,13 +1,13 @@
 //! Smoke tests for bitio cursors, endian helpers, and masks.
 
-use base.test;
+use base.test.{report};
 use bitio;
 use std.io;
 
 fn check_msb_cross_byte_read() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let data = [2]u8.{0b1010_1100, 0b0110_0000};
-    let r = data.&[0 .. 2].bits_msb()..&;
+    let r = data.&[0...2].bits_msb()..&;
 
     r
         .read_bool()
@@ -20,67 +20,67 @@ fn check_msb_cross_byte_read() void {
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u8.{2})
+        .eq(2u8)
         .sum(@loc(), t);
     r
         .read_u8(6)
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u8.{49})
+        .eq(49u8)
         .sum(@loc(), t);
     r
         .byte_offset()
         .should()
-        .eq(usize.{1})
+        .eq(1usize)
         .sum(@loc(), t);
     r
         .bit_offset()
         .should()
-        .eq(u8.{2})
+        .eq(2u8)
         .sum(@loc(), t);
     r
         .bit_position()
         .should()
-        .eq(usize.{10})
+        .eq(10usize)
         .sum(@loc(), t);
 }
 
 fn check_lsb_cross_byte_read() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let data = [2]u8.{0b0000_1011, 0b0000_0010};
-    let r = data.&[0 .. 2].bits_lsb()..&;
+    let r = data.&[0...2].bits_lsb()..&;
 
     r
         .read_u8(4)
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u8.{11})
+        .eq(11u8)
         .sum(@loc(), t);
     r
         .read_u8(6)
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u8.{32})
+        .eq(32u8)
         .sum(@loc(), t);
     r
         .byte_offset()
         .should()
-        .eq(usize.{1})
+        .eq(1usize)
         .sum(@loc(), t);
     r
         .bit_offset()
         .should()
-        .eq(u8.{2})
+        .eq(2u8)
         .sum(@loc(), t);
 }
 
 fn check_msb_write_and_pad() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let mut out = [2]u8.{0xff, 0xff};
-    let w = out..&[0 .. 2].bits_msb_mut()..&;
+    let w = out..&[0...2].bits_msb_mut()..&;
 
     w
         .write_bool(true)
@@ -101,11 +101,11 @@ fn check_msb_write_and_pad() void {
 
     out.[0]
         .should()
-        .eq(u8.{0b1010_1100})
+        .eq(0b1010_1100u8)
         .sum(@loc(), t);
     out.[1]
         .should()
-        .eq(u8.{0b0100_0000})
+        .eq(0b0100_0000u8)
         .sum(@loc(), t);
     w
         .is_byte_aligned()
@@ -114,14 +114,14 @@ fn check_msb_write_and_pad() void {
     w
         .byte_offset()
         .should()
-        .eq(usize.{2})
+        .eq(2usize)
         .sum(@loc(), t);
 }
 
 fn check_lsb_write_and_pad() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let mut out = [2]u8.{0xff, 0xff};
-    let w = out..&[0 .. 2].bits_lsb_mut()..&;
+    let w = out..&[0...2].bits_lsb_mut()..&;
 
     w
         .write_u8(4, 11)
@@ -138,11 +138,11 @@ fn check_lsb_write_and_pad() void {
 
     out.[0]
         .should()
-        .eq(u8.{0b0000_1011})
+        .eq(0b0000_1011u8)
         .sum(@loc(), t);
     out.[1]
         .should()
-        .eq(u8.{0b0000_0010})
+        .eq(0b0000_0010u8)
         .sum(@loc(), t);
     w
         .is_byte_aligned()
@@ -151,9 +151,9 @@ fn check_lsb_write_and_pad() void {
 }
 
 fn check_wide_integer_helpers() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let mut out = [16]u8.{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    let w = out..&[0 .. 16].bits_msb_mut()..&;
+    let w = out..&[0...16].bits_msb_mut()..&;
     w
         .write_u16(12, 0xabc)
         .should_ok()
@@ -171,14 +171,14 @@ fn check_wide_integer_helpers() void {
         .should_ok()
         .sum(@loc(), t);
 
-    let r = out.&[0 .. 16].bits_msb()..&;
+    let r = out.&[0...16].bits_msb()..&;
     let got16 = r
         .read_u16(12)
         .should_ok()
         .sum(@loc(), t);
     got16
         .should()
-        .eq(u16.{0xabc})
+        .eq(0xabcu16)
         .sum(@loc(), t);
     let got32 = r
         .read_u32(20)
@@ -186,7 +186,7 @@ fn check_wide_integer_helpers() void {
         .sum(@loc(), t);
     got32
         .should()
-        .eq(u32.{0x54321})
+        .eq(0x54321u32)
         .sum(@loc(), t);
     let got64 = r
         .read_u64(36)
@@ -194,7 +194,7 @@ fn check_wide_integer_helpers() void {
         .sum(@loc(), t);
     got64
         .should()
-        .eq(u64.{0xabcdef123})
+        .eq(0xabcdef123u64)
         .sum(@loc(), t);
     let got_usize = r
         .read_usize(5)
@@ -202,27 +202,27 @@ fn check_wide_integer_helpers() void {
         .sum(@loc(), t);
     got_usize
         .should()
-        .eq(usize.{0b10101})
+        .eq(0b10101usize)
         .sum(@loc(), t);
 }
 
 fn check_alignment_skip() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let data = [2]u8.{0b1111_0000, 0b0101_1010};
-    let r = data.&[0 .. 2].bits_msb()..&;
+    let r = data.&[0...2].bits_msb()..&;
 
     r
         .read_u8(3)
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u8.{7})
+        .eq(7u8)
         .sum(@loc(), t);
     r.align_to_byte();
     r
         .byte_offset()
         .should()
-        .eq(usize.{1})
+        .eq(1usize)
         .sum(@loc(), t);
     let byte = r
         .read_u8(8)
@@ -230,14 +230,14 @@ fn check_alignment_skip() void {
         .sum(@loc(), t);
     byte
         .should()
-        .eq(u8.{0b0101_1010})
+        .eq(0b0101_1010u8)
         .sum(@loc(), t);
 }
 
 fn check_cursor_errors() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let input = [1]u8.{0};
-    let r = input.&[0 .. 1].bits_msb()..&;
+    let r = input.&[0...1].bits_msb()..&;
 
     r
         .read_u8(9)
@@ -255,7 +255,7 @@ fn check_cursor_errors() void {
         .sum(@loc(), t);
 
     let mut out = [1]u8.{0};
-    let w = out..&[0 .. 1].bits_msb_mut()..&;
+    let w = out..&[0...1].bits_msb_mut()..&;
     w
         .write_u8(3, 0b1000)
         .should_err()
@@ -278,23 +278,23 @@ fn check_cursor_errors() void {
 }
 
 fn check_endian_helpers() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let data = [8]u8.{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
 
-    let data_bytes = data.&[0 .. 8];
+    let data_bytes = data.&[0...8];
     data_bytes
         .read_u16_be()
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u16.{0x0123})
+        .eq(0x0123u16)
         .sum(@loc(), t);
     data_bytes
         .read_u16_le()
         .should_ok()
         .sum(@loc(), t)
         .should()
-        .eq(u16.{0x2301})
+        .eq(0x2301u16)
         .sum(@loc(), t);
     let be32 = data_bytes
         .read_u32_be()
@@ -302,7 +302,7 @@ fn check_endian_helpers() void {
         .sum(@loc(), t);
     be32
         .should()
-        .eq(u32.{0x01234567})
+        .eq(0x01234567u32)
         .sum(@loc(), t);
     let le32 = data_bytes
         .read_u32_le()
@@ -310,7 +310,7 @@ fn check_endian_helpers() void {
         .sum(@loc(), t);
     le32
         .should()
-        .eq(u32.{0x67452301})
+        .eq(0x67452301u32)
         .sum(@loc(), t);
     let be64 = data_bytes
         .read_u64_be()
@@ -318,7 +318,7 @@ fn check_endian_helpers() void {
         .sum(@loc(), t);
     be64
         .should()
-        .eq(u64.{0x0123456789abcdef})
+        .eq(0x0123456789abcdefu64)
         .sum(@loc(), t);
     let le64 = data_bytes
         .read_u64_le()
@@ -326,45 +326,45 @@ fn check_endian_helpers() void {
         .sum(@loc(), t);
     le64
         .should()
-        .eq(u64.{0xefcdab8967452301})
+        .eq(0xefcdab8967452301u64)
         .sum(@loc(), t);
 
     let mut out = [8]u8.{0, 0, 0, 0, 0, 0, 0, 0};
-    out..&[0 .. 2]
+    out..&[0...2]
         .write_u16_be(0x0123)
         .should_ok()
         .sum(@loc(), t);
-    out..&[2 .. 4]
+    out..&[2...4]
         .write_u16_le(0x4567)
         .should_ok()
         .sum(@loc(), t);
-    let out32 = out..&[0 .. 4]
+    let out32 = out..&[0...4]
         .read_u32_be()
         .should_ok()
         .sum(@loc(), t);
     out32
         .should()
-        .eq(u32.{0x01236745})
+        .eq(0x01236745u32)
         .sum(@loc(), t);
-    out..&[0 .. 8]
+    out..&[0...8]
         .write_u64_le(0x0123456789abcdef)
         .should_ok()
         .sum(@loc(), t);
-    let swapped = out.&[0 .. 8]
+    let swapped = out.&[0...8]
         .read_u64_be()
         .should_ok()
         .sum(@loc(), t);
     swapped
         .should()
-        .eq(u64.{0xefcdab8967452301})
+        .eq(0xefcdab8967452301u64)
         .sum(@loc(), t);
 
-    data.&[0 .. 1]
+    data.&[0...1]
         .read_u16_be()
         .should_err()
         .eq(bitio.Error.UnexpectedEof)
         .sum(@loc(), t);
-    out..&[0 .. 1]
+    out..&[0...1]
         .write_u16_be(0)
         .should_err()
         .eq(bitio.Error.ShortOutput)
@@ -372,43 +372,43 @@ fn check_endian_helpers() void {
 }
 
 fn check_masks() void {
-    let t = test.report(io.stderr())..&;
+    let t = report(io.stderr())..&;
     let mut data = [5]u8.{0x00, 0xff, 0x55, 0xaa, 0x0f};
-    data..&[0 .. 5].xor_mask(0xff);
+    data..&[0...5].xor_mask(0xff);
     data.[0]
         .should()
-        .eq(u8.{0xff})
+        .eq(0xffu8)
         .sum(@loc(), t);
     data.[1]
         .should()
-        .eq(u8.{0x00})
+        .eq(0x00u8)
         .sum(@loc(), t);
     data.[2]
         .should()
-        .eq(u8.{0xaa})
+        .eq(0xaau8)
         .sum(@loc(), t);
 
     let mask = [2]u8.{0x0f, 0xf0};
-    data..&[0 .. 4]
-        .xor_repeating(mask.&[0 .. 2])
+    data..&[0...4]
+        .xor_repeating(mask.&[0...2])
         .should_ok()
         .sum(@loc(), t);
     data.[0]
         .should()
-        .eq(u8.{0xf0})
+        .eq(0xf0u8)
         .sum(@loc(), t);
     data.[1]
         .should()
-        .eq(u8.{0xf0})
+        .eq(0xf0u8)
         .sum(@loc(), t);
-    data..&[0 .. 4]
-        .xor_repeating(mask.&[0 .. 0])
+    data..&[0...4]
+        .xor_repeating(mask.&[0...0])
         .should_err()
         .eq(bitio.Error.InvalidBitCount)
         .sum(@loc(), t);
 }
-
-fn main() i32 {
+#[test]
+fn smoke() i32 {
     check_msb_cross_byte_read();
     check_lsb_cross_byte_read();
     check_msb_write_and_pad();
