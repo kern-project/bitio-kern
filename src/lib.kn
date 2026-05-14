@@ -154,19 +154,19 @@ impl &[u8] {
 
     /// Reads a big-endian `u16` from the first two bytes.
     pub fn read_u16_be() u16!Error {
-        if (self.len() < 2) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 2) return .{ Err: .UnexpectedEof };
         return .{ Ok: ((self.[0] as u16) << 8) | (self.[1] as u16) };
     }
 
     /// Reads a little-endian `u16` from the first two bytes.
     pub fn read_u16_le() u16!Error {
-        if (self.len() < 2) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 2) return .{ Err: .UnexpectedEof };
         return .{ Ok: (self.[0] as u16) | ((self.[1] as u16) << 8) };
     }
 
     /// Reads a big-endian `u32` from the first four bytes.
     pub fn read_u32_be() u32!Error {
-        if (self.len() < 4) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 4) return .{ Err: .UnexpectedEof };
         return .{ Ok:
             ((self.[0] as u32) << 24) |
             ((self.[1] as u32) << 16) |
@@ -177,7 +177,7 @@ impl &[u8] {
 
     /// Reads a little-endian `u32` from the first four bytes.
     pub fn read_u32_le() u32!Error {
-        if (self.len() < 4) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 4) return .{ Err: .UnexpectedEof };
         return .{ Ok:
             (self.[0] as u32) |
             ((self.[1] as u32) << 8) |
@@ -188,7 +188,7 @@ impl &[u8] {
 
     /// Reads a big-endian `u64` from the first eight bytes.
     pub fn read_u64_be() u64!Error {
-        if (self.len() < 8) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 8) return .{ Err: .UnexpectedEof };
         return .{ Ok:
             ((self.[0] as u64) << 56) |
             ((self.[1] as u64) << 48) |
@@ -203,7 +203,7 @@ impl &[u8] {
 
     /// Reads a little-endian `u64` from the first eight bytes.
     pub fn read_u64_le() u64!Error {
-        if (self.len() < 8) return .{ Err: .UnexpectedEof };
+        if (self.@len() < 8) return .{ Err: .UnexpectedEof };
         return .{ Ok:
             (self.[0] as u64) |
             ((self.[1] as u64) << 8) |
@@ -230,7 +230,7 @@ impl &mut [u8] {
 
     /// Writes a big-endian `u16` into the first two bytes.
     pub fn write_u16_be(value: u16) void!Error {
-        if (self.len() < 2) return .{ Err: .ShortOutput };
+        if (self.@len() < 2) return .{ Err: .ShortOutput };
         self.[0] = (value >> 8) as u8;
         self.[1] = value as u8;
         return .{ Ok: {} };
@@ -238,7 +238,7 @@ impl &mut [u8] {
 
     /// Writes a little-endian `u16` into the first two bytes.
     pub fn write_u16_le(value: u16) void!Error {
-        if (self.len() < 2) return .{ Err: .ShortOutput };
+        if (self.@len() < 2) return .{ Err: .ShortOutput };
         self.[0] = value as u8;
         self.[1] = (value >> 8) as u8;
         return .{ Ok: {} };
@@ -246,7 +246,7 @@ impl &mut [u8] {
 
     /// Writes a big-endian `u32` into the first four bytes.
     pub fn write_u32_be(value: u32) void!Error {
-        if (self.len() < 4) return .{ Err: .ShortOutput };
+        if (self.@len() < 4) return .{ Err: .ShortOutput };
         self.[0] = (value >> 24) as u8;
         self.[1] = (value >> 16) as u8;
         self.[2] = (value >> 8) as u8;
@@ -256,7 +256,7 @@ impl &mut [u8] {
 
     /// Writes a little-endian `u32` into the first four bytes.
     pub fn write_u32_le(value: u32) void!Error {
-        if (self.len() < 4) return .{ Err: .ShortOutput };
+        if (self.@len() < 4) return .{ Err: .ShortOutput };
         self.[0] = value as u8;
         self.[1] = (value >> 8) as u8;
         self.[2] = (value >> 16) as u8;
@@ -266,7 +266,7 @@ impl &mut [u8] {
 
     /// Writes a big-endian `u64` into the first eight bytes.
     pub fn write_u64_be(value: u64) void!Error {
-        if (self.len() < 8) return .{ Err: .ShortOutput };
+        if (self.@len() < 8) return .{ Err: .ShortOutput };
         self.[0] = (value >> 56) as u8;
         self.[1] = (value >> 48) as u8;
         self.[2] = (value >> 40) as u8;
@@ -280,7 +280,7 @@ impl &mut [u8] {
 
     /// Writes a little-endian `u64` into the first eight bytes.
     pub fn write_u64_le(value: u64) void!Error {
-        if (self.len() < 8) return .{ Err: .ShortOutput };
+        if (self.@len() < 8) return .{ Err: .ShortOutput };
         self.[0] = value as u8;
         self.[1] = (value >> 8) as u8;
         self.[2] = (value >> 16) as u8;
@@ -297,7 +297,7 @@ impl &mut [u8] {
         let mut i = 0usize;
         // In-place mutation needs stable numeric indexes; there is no iterator
         // borrow to advance without holding a conflicting mutable slice borrow.
-        while (i < self.len()) {
+        while (i < self.@len()) {
             self.[i] = self.[i] ^ mask;
             i += 1;
         }
@@ -308,11 +308,11 @@ impl &mut [u8] {
     /// An empty mask is rejected because it almost always means the caller lost
     /// a protocol key or nonce boundary.
     pub fn xor_repeating(mask: &[u8]) void!Error {
-        if (mask.len() == 0) return .{ Err: .InvalidBitCount };
+        if (mask.@len() == 0) return .{ Err: .InvalidBitCount };
         let mut i = 0usize;
         // The index is also the repeating-mask phase, so keep the counter visible.
-        while (i < self.len()) {
-            self.[i] = self.[i] ^ mask.[i % mask.len()];
+        while (i < self.@len()) {
+            self.[i] = self.[i] ^ mask.[i % mask.@len()];
             i += 1;
         }
         return .{ Ok: {} };
@@ -344,7 +344,7 @@ impl &MsbReader {
 impl &mut MsbReader {
     /// Reads one boolean bit.
     pub fn read_bool() bool!Error {
-        if (self.byte_index >= self.data.len()) return .{ Err: .UnexpectedEof };
+        if (self.byte_index >= self.data.@len()) return .{ Err: .UnexpectedEof };
         let byte = self.data.[self.byte_index];
         let shift = 7 - self.bit_index;
         let value = ((byte >> shift) & 1) != 0;
@@ -464,7 +464,7 @@ impl &LsbReader {
 impl &mut LsbReader {
     /// Reads one boolean bit.
     pub fn read_bool() bool!Error {
-        if (self.byte_index >= self.data.len()) return .{ Err: .UnexpectedEof };
+        if (self.byte_index >= self.data.@len()) return .{ Err: .UnexpectedEof };
         let byte = self.data.[self.byte_index];
         let value = ((byte >> self.bit_index) & 1) != 0;
         self.bit_index += 1;
@@ -578,7 +578,7 @@ impl &MsbWriter {
 impl &mut MsbWriter {
     /// Writes one boolean bit.
     pub fn write_bool(value: bool) void!Error {
-        if (self.byte_index >= self.data.len()) return .{ Err: .ShortOutput };
+        if (self.byte_index >= self.data.@len()) return .{ Err: .ShortOutput };
         let shift = 7 - self.bit_index;
         let mask = 1u8 << shift;
         if (value) {
@@ -688,7 +688,7 @@ impl &LsbWriter {
 impl &mut LsbWriter {
     /// Writes one boolean bit.
     pub fn write_bool(value: bool) void!Error {
-        if (self.byte_index >= self.data.len()) return .{ Err: .ShortOutput };
+        if (self.byte_index >= self.data.@len()) return .{ Err: .ShortOutput };
         let mask = 1u8 << self.bit_index;
         if (value) {
             self.data.[self.byte_index] = self.data.[self.byte_index] | mask;

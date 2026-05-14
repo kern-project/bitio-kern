@@ -7,7 +7,7 @@ fn parse_header(packet: &[u8]) u16!bitio.Error {
     let enabled = r.read_bool().?;
     let version = r.read_u8(3).?;
     r.align_to_byte();
-    let length = packet.&[1...packet.len()].read_u16_be().?;
+    let length = packet.&[1...packet.@len()].read_u16_be().?;
 
     if (!enabled or version == 0) {
         return .{ Err: .ValueTooWide };
@@ -20,7 +20,7 @@ fn write_header(out: &mut [u8], length: u16) void!bitio.Error {
     w.write_bool(true).?;
     w.write_u8(3, 2).?;
     w.pad_to_byte().?;
-    out..&[1...out.len()].write_u16_be(length).?;
+    out..&[1...out.@len()].write_u16_be(length).?;
     return .{ Ok: {} };
 }
 
