@@ -27,3 +27,17 @@ package = "bitio 0.1.0 root"
 kind = "test"
 name = "api_compile"
 root = "tests/api_compile.kn"
+
+[[publish-proof]]
+package-id = "bitio 0.1.0 root"
+path = "."
+package = "bitio"
+version = "0.1.0"
+kern = "0.7.6"
+description = "Bit-level protocol and codec utilities for Kern"
+license = "MIT"
+authors = ["softfault <givenyoung46@gmail.com>"]
+readme = "README.md"
+repository = "https://github.com/softfault/bitio-kern.git"
+manifest-sha256 = "sha256:e73d66c08f48b95f874fdb92fda649365b66ff5d74ef6693073b265a098923c6"
+source-sha256 = "sha256:d5868b4282c9cfd8b5b91171822aec303d63109dcde25366ba097bdb6ec2242d"
