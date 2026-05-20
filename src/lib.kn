@@ -17,7 +17,7 @@
 //! moving previous bits left. An LSB-first read stores the first incoming bit at
 //! bit zero, the next at bit one, and so on.
 
-use base.io.{Formatable, Write};
+use base.io.{FormatSpec, Formatable, Write};
 
 const USIZE_BITS = @sizeOf[usize]() * 8;
 
@@ -35,7 +35,8 @@ pub enum Error {
 
 impl &Error : Formatable {
     /// Writes a stable diagnostic name for the bit I/O error.
-    pub fn write_to(writer: &mut Write) void {
+    pub fn write_fmt(spec: FormatSpec, writer: &mut Write) void {
+        _ = spec;
         match (self.*) {
             .UnexpectedEof => _ = writer.write("bitio.Error.UnexpectedEof"),
             .ShortOutput => _ = writer.write("bitio.Error.ShortOutput"),
